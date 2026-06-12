@@ -1,0 +1,1046 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover" />
+<title>太陽軌跡AR v7</title>
+<style>
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent;}
+  html,body{margin:0;height:100%;background:#070b16;color:#e8edf7;
+    font-family:-apple-system,BlinkMacSystemFont,sans-serif;overflow:hidden;
+    -webkit-user-select:none;user-select:none;}
+
+  #video{position:fixed;inset:0;width:100%;height:100%;object-fit:cover;z-index:0;background:#000;display:none;}
+  #canvas{position:fixed;inset:0;width:100%;height:100%;z-index:1;display:none;}
+
+  /* ---- onboarding screens ---- */
+  .screen{position:fixed;inset:0;z-index:30;display:none;flex-direction:column;
+    align-items:center;justify-content:center;padding:26px;text-align:center;
+    background:radial-gradient(120% 90% at 50% -10%,rgba(255,179,71,.10),transparent 60%),#070b16;}
+  .screen.on{display:flex;}
+  .step{font-size:11px;letter-spacing:.3em;text-transform:uppercase;color:#7e8aa3;margin-bottom:10px;
+    display:flex;align-items:center;gap:8px;justify-content:center;}
+  .step b{color:#ffb347;}
+  .dots{display:inline-flex;gap:5px;margin-left:6px;}
+  .dots .d{width:6px;height:6px;border-radius:50%;background:rgba(255,255,255,.2);}
+  .dots .d.on{background:#ffb347;}
+  .screen h1{font-size:23px;font-weight:600;margin:0 0 8px;color:#ffd27a;line-height:1.3;}
+  .screen .why{font-size:12px;color:#9fb0d0;margin:0 0 14px;}
+  .screen p{max-width:330px;color:#9fb0d0;font-size:14px;line-height:1.7;margin:0 0 26px;}
+  .btn{font-size:15px;font-weight:600;padding:15px 38px;border-radius:999px;
+    border:1px solid #ffb347;color:#070b16;cursor:pointer;
+    background:linear-gradient(180deg,#ffd27a,#ffb347);box-shadow:0 6px 30px rgba(255,179,71,.28);
+    min-width:200px;}
+  .btn:active{transform:scale(.96);}
+  .btn:disabled{opacity:.6;}
+  .btn .spin{display:inline-block;width:14px;height:14px;border:2px solid rgba(7,11,22,.3);
+    border-top-color:#070b16;border-radius:50%;animation:spin 0.7s linear infinite;vertical-align:-2px;margin-right:8px;}
+  @keyframes spin{to{transform:rotate(360deg)}}
+  .btn.ghost{background:transparent;color:#9fb0d0;border-color:rgba(255,255,255,.15);
+    box-shadow:none;font-weight:500;margin-top:14px;font-size:13px;padding:11px 24px;}
+  .icon{font-size:46px;margin-bottom:14px;}
+  .live{margin-top:24px;font-family:ui-monospace,Menlo,monospace;font-size:12px;color:#5fe0d6;min-height:18px;letter-spacing:.04em;}
+  .live.bad{color:#ff6b6b;}
+  .help{margin-top:20px;text-align:left;max-width:330px;background:rgba(255,255,255,.04);
+    border:1px solid rgba(255,255,255,.1);border-radius:12px;padding:14px 16px;font-size:12.5px;line-height:1.8;color:#9fb0d0;}
+  .help b{color:#ffd27a;} .help .n{color:#5fe0d6;font-family:ui-monospace,monospace;}
+
+  /* ---- panel base ---- */
+  .panel{background:rgba(0,0,10,.82);border:1px solid rgba(255,255,255,.15);
+    border-radius:16px;-webkit-backdrop-filter:blur(12px);backdrop-filter:blur(12px);}
+
+  /* ---- status pill (top) ---- */
+  #pill{position:fixed;top:max(10px,env(safe-area-inset-top));left:50%;transform:translateX(-50%);
+    z-index:24;padding:5px 14px 5px 11px;border-radius:999px;
+    background:rgba(0,0,10,.82);border:1px solid rgba(255,255,255,.15);
+    -webkit-backdrop-filter:blur(12px);backdrop-filter:blur(12px);
+    font-size:11.5px;color:#e8edf7;display:none;align-items:center;gap:8px;
+    cursor:pointer;pointer-events:auto;max-width:90vw;}
+  #pill.on{display:inline-flex;}
+  #pill .dot{width:7px;height:7px;border-radius:50%;background:#5fe0d6;flex:none;box-shadow:0 0 6px currentColor;color:#5fe0d6;}
+  #pill.warn .dot{background:#ffb347;color:#ffb347;}
+  #pill.err .dot{background:#ff6b6b;color:#ff6b6b;}
+  #pill .label{font-weight:500;}
+  #pill-detail{position:fixed;top:calc(max(10px,env(safe-area-inset-top)) + 36px);left:50%;
+    transform:translateX(-50%);z-index:24;padding:9px 14px;border-radius:12px;
+    background:rgba(0,0,10,.88);border:1px solid rgba(255,255,255,.15);
+    -webkit-backdrop-filter:blur(12px);backdrop-filter:blur(12px);
+    font-size:10.5px;color:#9fb0d0;line-height:1.7;font-family:ui-monospace,monospace;
+    display:none;font-variant-numeric:tabular-nums;}
+  #pill-detail.on{display:block;animation:fadein .2s;}
+  @keyframes fadein{from{opacity:0;transform:translate(-50%,-4px);}to{opacity:1;transform:translateX(-50%);}}
+
+  /* ---- camera flip ---- */
+  #flipcam{position:fixed;top:max(10px,env(safe-area-inset-top));right:12px;z-index:24;
+    width:48px;height:48px;border-radius:50%;border:1px solid rgba(255,255,255,.15);
+    background:rgba(0,0,10,.82);color:#9fb0d0;font-size:20px;cursor:pointer;display:none;
+    align-items:center;justify-content:center;
+    -webkit-backdrop-filter:blur(12px);backdrop-filter:blur(12px);pointer-events:auto;}
+  #flipcam:active{transform:scale(.96);background:rgba(255,179,71,.2);color:#ffd27a;}
+
+  /* ---- sun info bar (above toolbar) ---- */
+  #infobar{position:fixed;left:12px;right:12px;
+    bottom:max(80px,calc(env(safe-area-inset-bottom) + 76px));
+    z-index:23;padding:10px 14px;display:none;
+    font-size:11.5px;line-height:1.4;pointer-events:auto;
+    transition:transform .25s cubic-bezier(.22,1,.36,1);}
+  #infobar.on{display:block;}
+  #infobar.min{transform:translateX(calc(100% - 50px));}
+  #infobar .ib-grid{display:flex;align-items:center;gap:11px;}
+  #infobar .ib-times{flex:1;display:flex;gap:14px;flex-wrap:wrap;font-variant-numeric:tabular-nums;}
+  #infobar .ib-times span{color:#7e8aa3;font-size:10px;letter-spacing:.05em;}
+  #infobar .ib-times b{color:#ffd27a;font-weight:600;font-size:12.5px;margin-left:3px;}
+  #infobar .ib-now{font-variant-numeric:tabular-nums;color:#5fe0d6;font-weight:600;font-size:12px;white-space:nowrap;}
+  #infobar .ib-now.down{color:#9fb0d0;}
+  #infobar .ib-min{position:absolute;right:10px;top:50%;transform:translateY(-50%);
+    background:none;border:none;color:#7e8aa3;font-size:14px;cursor:pointer;padding:6px;}
+  #infobar .ib-note{font-size:10px;color:#ffb347;margin-top:4px;display:none;}
+  #infobar.front-cam .ib-note{display:block;}
+
+  /* ---- sun finder arrow ---- */
+  #finder{position:fixed;z-index:22;width:46px;height:46px;pointer-events:none;
+    display:none;opacity:0;transition:opacity .3s;will-change:transform;}
+  #finder.on{display:block;opacity:1;}
+  #finder svg{width:100%;height:100%;}
+
+  /* ---- bottom toolbar ---- */
+  #toolbar{position:fixed;left:50%;transform:translateX(-50%);
+    bottom:max(12px,calc(env(safe-area-inset-bottom) + 8px));z-index:24;
+    display:none;gap:8px;padding:7px;border-radius:999px;
+    background:rgba(0,0,10,.82);border:1px solid rgba(255,255,255,.15);
+    -webkit-backdrop-filter:blur(12px);backdrop-filter:blur(12px);pointer-events:auto;}
+  #toolbar.on{display:flex;}
+  .tb{width:48px;height:48px;border-radius:50%;border:none;background:transparent;
+    color:#9fb0d0;font-size:21px;cursor:pointer;display:flex;align-items:center;justify-content:center;
+    transition:transform .12s,background .15s;}
+  .tb:active{transform:scale(.92);}
+  .tb.active{background:linear-gradient(180deg,#ffd27a,#ffb347);color:#070b16;}
+
+  /* ---- sheets ---- */
+  .sheet{position:fixed;left:10px;right:10px;z-index:23;
+    bottom:max(74px,calc(env(safe-area-inset-bottom) + 70px));
+    background:rgba(0,0,10,.92);border:1px solid rgba(255,255,255,.15);border-radius:18px;
+    -webkit-backdrop-filter:blur(16px);backdrop-filter:blur(16px);
+    padding:8px 16px 18px;pointer-events:auto;
+    transform:translateY(140%);transition:transform .28s cubic-bezier(.22,1,.36,1);
+    max-height:55vh;overflow-y:auto;-webkit-overflow-scrolling:touch;}
+  .sheet.on{transform:translateY(0);}
+  .handle{width:38px;height:5px;border-radius:3px;background:rgba(255,255,255,.2);
+    margin:6px auto 10px;}
+  .sheet h2{margin:0 0 4px;font-size:15px;font-weight:600;color:#ffd27a;}
+  .sheet .desc{margin:0 0 14px;font-size:11.5px;color:#7e8aa3;line-height:1.6;}
+
+  /* checkbox rows */
+  .ck{display:flex;align-items:center;gap:11px;padding:10px 4px;cursor:pointer;
+    border-bottom:1px solid rgba(255,255,255,.06);}
+  .ck:last-child{border-bottom:none;}
+  .ck input{display:none;}
+  .ck.disabled{opacity:.7;cursor:default;}
+  .box{width:22px;height:22px;border-radius:6px;border:2px solid rgba(255,255,255,.25);
+    flex:none;display:flex;align-items:center;justify-content:center;transition:.15s;}
+  .ck input:checked + .box{background:var(--c);border-color:var(--c);}
+  .ck input:checked + .box::after{content:'✓';color:#070b16;font-size:14px;font-weight:800;}
+  .ck.disabled .box{background:var(--c);border-color:var(--c);}
+  .ck.disabled .box::after{content:'✓';color:#070b16;font-size:14px;font-weight:800;}
+  .swatch{width:20px;height:3px;border-radius:2px;background:var(--c);flex:none;}
+  .cklabel{flex:1;font-size:14px;}
+  .cksub{font-size:10.5px;color:#7e8aa3;font-family:ui-monospace,monospace;}
+
+  /* date/time controls */
+  .field{margin-bottom:14px;}
+  .flab{font-size:10.5px;letter-spacing:.1em;text-transform:uppercase;color:#7e8aa3;margin-bottom:7px;}
+  .presets{display:flex;flex-wrap:wrap;gap:6px;}
+  .chip{font-size:12px;font-weight:600;padding:8px 13px;border-radius:999px;
+    border:1px solid rgba(255,255,255,.18);background:rgba(255,255,255,.05);color:#e8edf7;cursor:pointer;}
+  .chip:active{transform:scale(.96);}
+  .chip.sel{border-color:#ffb347;background:rgba(255,179,71,.18);color:#ffd27a;}
+  .stepper{display:flex;align-items:center;gap:8px;}
+  .stepper .val{flex:1;text-align:center;font-family:ui-monospace,monospace;font-size:16px;
+    color:#ffd27a;background:rgba(255,255,255,.05);border-radius:9px;padding:11px;border:1px solid rgba(255,255,255,.1);}
+  .sbtn{width:48px;height:48px;flex:none;border-radius:10px;border:1px solid rgba(255,255,255,.18);
+    background:rgba(255,255,255,.06);color:#ffd27a;font-size:16px;font-weight:700;cursor:pointer;}
+  .sbtn:active{transform:scale(.94);background:rgba(255,179,71,.2);}
+  .timerow{display:flex;gap:8px;align-items:center;margin-top:10px;}
+  .timerow .playbtn{width:48px;height:48px;flex:none;border-radius:50%;border:none;
+    background:linear-gradient(180deg,#c77dff,#9b5fe0);color:#fff;font-size:18px;cursor:pointer;
+    display:flex;align-items:center;justify-content:center;}
+  .timerow .playbtn:active{transform:scale(.94);}
+  .timerow .playbtn.playing{background:linear-gradient(180deg,#ffd27a,#ffb347);color:#070b16;}
+  .timerow .slidewrap{flex:1;position:relative;}
+  input[type=range]{width:100%;-webkit-appearance:none;height:4px;background:rgba(255,255,255,.15);border-radius:2px;margin:0;}
+  input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:24px;height:24px;border-radius:50%;background:#c77dff;border:2px solid #070b16;}
+  .ticks{display:flex;justify-content:space-between;font-size:9px;color:#7e8aa3;
+    font-family:ui-monospace,monospace;margin-top:4px;padding:0 6px;}
+  .toggles{display:flex;gap:10px;margin-top:6px;}
+  .toggles .ck{flex:1;border:1px solid rgba(255,255,255,.12);border-radius:11px;padding:11px;}
+
+  /* north panel buttons */
+  .nbtn{width:100%;font-size:14px;font-weight:600;padding:14px;border-radius:12px;margin-top:9px;
+    border:1px solid rgba(255,255,255,.18);background:rgba(255,255,255,.06);color:#e8edf7;cursor:pointer;
+    display:flex;align-items:center;gap:10px;justify-content:center;}
+  .nbtn:active{transform:scale(.98);}
+  .nbtn.primary{border-color:#ffb347;background:rgba(255,179,71,.16);color:#ffd27a;}
+  .offwrap{margin-top:16px;}
+  .offlab{display:flex;justify-content:space-between;font-size:10.5px;letter-spacing:.1em;text-transform:uppercase;color:#7e8aa3;}
+  .offlab b{color:#ffd27a;font-size:13px;}
+  #off{accent-color:#ffb347;}
+  #off::-webkit-slider-thumb{background:#ffb347;}
+
+  /* settings sheet */
+  .setrow{display:flex;align-items:center;justify-content:space-between;
+    padding:13px 4px;border-bottom:1px solid rgba(255,255,255,.06);}
+  .setrow:last-child{border-bottom:none;}
+  .setrow .lab{font-size:14px;}
+  .setrow .sub{font-size:11px;color:#7e8aa3;margin-top:2px;}
+  .toggle{position:relative;width:46px;height:26px;border-radius:999px;background:rgba(255,255,255,.15);
+    cursor:pointer;flex:none;transition:.15s;}
+  .toggle::after{content:'';position:absolute;top:3px;left:3px;width:20px;height:20px;border-radius:50%;
+    background:#fff;transition:.15s;}
+  .toggle.on{background:#ffb347;}
+  .toggle.on::after{transform:translateX(20px);}
+  .danger{color:#ff6b6b!important;border-color:rgba(255,107,107,.3)!important;}
+  .ver{text-align:center;font-size:10px;color:#7e8aa3;margin-top:12px;font-family:ui-monospace,monospace;}
+
+  /* reticle */
+  #reticle{position:fixed;top:50%;left:50%;width:28px;height:28px;z-index:21;transform:translate(-50%,-50%);pointer-events:none;display:none;}
+  #reticle::before,#reticle::after{content:'';position:absolute;background:#5fe0d6;opacity:.5;}
+  #reticle::before{left:50%;top:0;width:1px;height:100%;}
+  #reticle::after{top:50%;left:0;height:1px;width:100%;}
+
+  /* north guide overlay */
+  #northguide{position:fixed;inset:0;z-index:35;display:none;pointer-events:none;}
+  #northguide.on{display:block;}
+  #northguide .line{position:absolute;left:50%;top:14%;bottom:34%;width:3px;
+    transform:translateX(-50%);background:linear-gradient(180deg,#ff6b6b,rgba(255,107,107,.1));}
+  #northguide .arrow{position:absolute;left:50%;top:12%;transform:translateX(-50%);color:#ff6b6b;font-size:30px;font-weight:800;}
+  #northguide .ntag{position:absolute;left:50%;top:calc(12% + 34px);transform:translateX(-50%);
+    color:#ff6b6b;font-weight:800;font-size:18px;letter-spacing:.1em;}
+  #northguide .gtext{position:absolute;left:20px;right:20px;top:max(20px,env(safe-area-inset-top));
+    color:#fff;font-size:13px;line-height:1.7;background:rgba(0,0,10,.78);padding:14px 16px;border-radius:14px;
+    -webkit-backdrop-filter:blur(10px);backdrop-filter:blur(10px);border:1px solid rgba(255,255,255,.12);}
+  #northguide .gtext ol{margin:6px 0 0;padding-left:18px;color:#9fb0d0;}
+  #northguide .gtext ol b{color:#ffd27a;}
+  #northguide .level{position:absolute;left:20px;right:20px;
+    bottom:calc(max(20px,env(safe-area-inset-bottom)) + 80px);
+    background:rgba(255,107,107,.18);border:1px solid #ff6b6b;color:#ffd27a;
+    padding:10px;border-radius:10px;font-size:12px;text-align:center;display:none;}
+  #northguide.tilted .level{display:block;}
+  #northguide .gbtns{position:absolute;left:20px;right:20px;
+    bottom:max(20px,calc(env(safe-area-inset-bottom) + 16px));display:flex;gap:10px;pointer-events:auto;}
+  #northguide .gbtns button{flex:1;font-size:15px;font-weight:700;padding:15px;border-radius:14px;border:none;cursor:pointer;}
+  #northguide .gbtns button:active{transform:scale(.97);}
+  #ng-set{background:linear-gradient(180deg,#ffd27a,#ffb347);color:#070b16;transition:opacity .15s;}
+  #northguide.tilted #ng-set{opacity:.4;}
+  #ng-cancel{background:rgba(255,255,255,.1);color:#e8edf7;border:1px solid rgba(255,255,255,.2);}
+
+  /* success flash */
+  #flash{position:fixed;inset:0;z-index:36;background:#ffb347;opacity:0;pointer-events:none;}
+  #flash.on{animation:flash .4s ease-out;}
+  @keyframes flash{0%{opacity:0;}30%{opacity:.10;}100%{opacity:0;}}
+
+  /* diagnostic panel (off by default) */
+  #diag{position:absolute;top:max(48px,calc(env(safe-area-inset-top) + 40px));left:12px;padding:9px 12px;
+    font-size:10.5px;line-height:1.55;min-width:168px;font-variant-numeric:tabular-nums;
+    display:none;pointer-events:none;z-index:22;}
+  #diag.on{display:block;}
+  .rtitle{color:#ffb347;letter-spacing:.16em;font-size:9px;text-transform:uppercase;font-weight:700;margin-bottom:3px;}
+  .row{display:flex;justify-content:space-between;gap:12px;}
+  .k{color:#7e8aa3;} .v{color:#e8edf7;}
+  .v.ok{color:#5fe0d6;} .v.warn{color:#ff6b6b;}
+  .sep{height:1px;background:rgba(255,255,255,.1);margin:5px 0;}
+  #dbg{position:fixed;bottom:140px;left:12px;right:12px;z-index:26;max-height:110px;overflow-y:auto;
+    padding:8px 10px;border-radius:10px;background:rgba(0,0,0,.88);font-size:10px;line-height:1.5;color:#aab;display:none;pointer-events:auto;}
+  #dbg.on{display:block;} #dbg .e{color:#ff6b6b;} #dbg .w{color:#ffd27a;} #dbg .i{color:#5fe0d6;}
+
+  #toast{position:fixed;z-index:40;left:50%;bottom:200px;transform:translateX(-50%);
+    background:rgba(0,0,10,.88);border:1px solid rgba(255,255,255,.15);color:#e8edf7;
+    -webkit-backdrop-filter:blur(8px);backdrop-filter:blur(8px);padding:11px 18px;border-radius:999px;
+    font-size:12px;display:none;max-width:90vw;text-align:center;}
+
+  /* reduced motion */
+  @media (prefers-reduced-motion:reduce){
+    *{animation-duration:0.001s!important;transition-duration:0.001s!important;}
+  }
+</style>
+</head>
+<body>
+
+<video id="video" playsinline muted autoplay></video>
+<canvas id="canvas"></canvas>
+<div id="reticle"></div>
+<div id="flash"></div>
+
+<!-- status pill -->
+<div id="pill"><span class="dot"></span><span class="label" id="pill-label">追跡中</span></div>
+<div id="pill-detail"></div>
+
+<!-- camera flip -->
+<button id="flipcam" title="カメラ切替" aria-label="カメラ切替">🔄</button>
+
+<!-- sun finder arrow -->
+<div id="finder">
+  <svg viewBox="0 0 46 46" xmlns="http://www.w3.org/2000/svg">
+    <circle cx="23" cy="23" r="20" fill="rgba(0,0,10,.78)" stroke="rgba(255,255,255,.2)" stroke-width="1.5"/>
+    <polygon points="23,6 30,18 26,18 26,28 20,28 20,18 16,18" fill="currentColor"/>
+    <circle cx="23" cy="36" r="4" fill="currentColor"/>
+  </svg>
+</div>
+
+<!-- diagnostic (settings-controlled) -->
+<div id="diag" class="panel">
+  <div class="rtitle">SENSOR</div>
+  <div class="row"><span class="k">compass</span><span class="v" id="r-h">—</span></div>
+  <div class="row"><span class="k">α β γ</span><span class="v" id="r-abg">—</span></div>
+  <div class="sep"></div>
+  <div class="rtitle">SUN</div>
+  <div class="row"><span class="k">az/alt</span><span class="v" id="r-sun">—</span></div>
+  <div class="sep"></div>
+  <div class="row"><span class="k">fps</span><span class="v" id="r-fps">—</span></div>
+</div>
+<div id="dbg"></div>
+
+<!-- sun info bar -->
+<div id="infobar" class="panel">
+  <div class="ib-grid">
+    <div class="ib-times">
+      <div><span>日の出</span><b id="ib-sr">—</b></div>
+      <div><span>南中</span><b id="ib-sn">—</b></div>
+      <div><span>日の入</span><b id="ib-ss">—</b></div>
+    </div>
+    <div class="ib-now" id="ib-now">—</div>
+    <button class="ib-min" id="ib-min-btn" aria-label="情報バー最小化">▸</button>
+  </div>
+  <div class="ib-note">前面カメラ — AR方位は背面基準</div>
+</div>
+
+<!-- ===== PANEL 1: seasonal arcs ===== -->
+<div id="sheet-arcs" class="sheet" role="dialog" aria-modal="false">
+  <div class="handle"></div>
+  <h2>☀️ 季節の太陽軌道</h2>
+  <p class="desc">二至二分の太陽の通り道を表示します。チェックで個別にON/OFF。</p>
+  <label class="ck disabled" style="--c:#ffd27a"><input type="checkbox" checked disabled><span class="box"></span><span class="swatch"></span><span class="cklabel">今日</span><span class="cksub" id="d-today"></span></label>
+  <label class="ck" style="--c:#ff8c6b"><input type="checkbox" id="ck-summer"><span class="box"></span><span class="swatch"></span><span class="cklabel">夏至</span><span class="cksub" id="d-summer"></span></label>
+  <label class="ck" style="--c:#6ee7a0"><input type="checkbox" id="ck-spring"><span class="box"></span><span class="swatch"></span><span class="cklabel">春分</span><span class="cksub" id="d-spring"></span></label>
+  <label class="ck" style="--c:#ffb347"><input type="checkbox" id="ck-autumn"><span class="box"></span><span class="swatch"></span><span class="cklabel">秋分</span><span class="cksub" id="d-autumn"></span></label>
+  <label class="ck" style="--c:#6bb6ff"><input type="checkbox" id="ck-winter"><span class="box"></span><span class="swatch"></span><span class="cklabel">冬至</span><span class="cksub" id="d-winter"></span></label>
+</div>
+
+<!-- ===== PANEL 2: date / time ===== -->
+<div id="sheet-date" class="sheet" role="dialog" aria-modal="false">
+  <div class="handle"></div>
+  <h2>📅 日付・時刻の指定</h2>
+  <p class="desc">任意の日の軌道と、指定時刻の太陽位置を表示します。</p>
+
+  <div class="field">
+    <div class="flab">日付プリセット</div>
+    <div class="presets">
+      <button class="chip" data-preset="today">今日</button>
+      <button class="chip" data-preset="spring">春分</button>
+      <button class="chip" data-preset="summer">夏至</button>
+      <button class="chip" data-preset="autumn">秋分</button>
+      <button class="chip" data-preset="winter">冬至</button>
+    </div>
+  </div>
+
+  <div class="field">
+    <div class="flab">日付（±で微調整）</div>
+    <div class="stepper">
+      <button class="sbtn" data-day="-30" aria-label="-30日">«</button>
+      <button class="sbtn" data-day="-1" aria-label="-1日">‹</button>
+      <div class="val" id="date-val">—</div>
+      <button class="sbtn" data-day="1" aria-label="+1日">›</button>
+      <button class="sbtn" data-day="30" aria-label="+30日">»</button>
+    </div>
+  </div>
+
+  <div class="field">
+    <div class="flab">時刻（太陽が軌道上を移動）</div>
+    <div class="stepper">
+      <button class="sbtn" data-min="-60" aria-label="-1時間">−1h</button>
+      <button class="sbtn" data-min="-10" aria-label="-10分">−10</button>
+      <div class="val" id="time-val">—</div>
+      <button class="sbtn" data-min="10" aria-label="+10分">+10</button>
+      <button class="sbtn" data-min="60" aria-label="+1時間">+1h</button>
+    </div>
+    <div class="timerow">
+      <button class="playbtn" id="playbtn" aria-label="時間を再生">▶</button>
+      <div class="slidewrap">
+        <input type="range" id="time-range" min="0" max="1439" step="1" value="720" aria-label="時刻スライダー">
+        <div class="ticks"><span>0</span><span>6</span><span>12</span><span>18</span><span>24</span></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="toggles">
+    <label class="ck" style="--c:#c77dff"><input type="checkbox" id="ck-custom-arc"><span class="box"></span><span class="cklabel">軌道を表示</span></label>
+    <label class="ck" style="--c:#c77dff"><input type="checkbox" id="ck-custom-sun" checked><span class="box"></span><span class="cklabel">太陽位置</span></label>
+  </div>
+</div>
+
+<!-- ===== PANEL 3: north calibration ===== -->
+<div id="sheet-north" class="sheet" role="dialog" aria-modal="false">
+  <div class="handle"></div>
+  <h2>🧭 北の較正</h2>
+  <p class="desc">iPhoneを実際の北へ向けて設定します。コンパスアプリと併用すると精度が上がります。</p>
+
+  <button class="nbtn primary" id="btn-manual">🎯 手動で北を上にする</button>
+  <button class="nbtn" id="btn-compass-guide">📱 iPhoneコンパスアプリの手順</button>
+
+  <div class="help" id="compass-guide" style="display:none;margin-top:12px">
+    <b>コンパスアプリで真北を確認</b><br>
+    1. ホームに戻り <b>「コンパス」</b> アプリを開く<br>
+    2. 表示が <span class="n">0° N</span> になる方向（=真北）を確認<br>
+    3. このアプリに戻る<br>
+    4. <b>「手動で北を上にする」</b> でその方向へiPhoneを向ける<br>
+    <span style="color:#7e8aa3">※ Safariはコンパスアプリの値を直接読めないため、この手順で精度を取り込みます。</span>
+  </div>
+
+  <div class="offwrap">
+    <div class="offlab"><span>北オフセット（微調整・5°刻み）</span><b id="off-val">0°</b></div>
+    <input type="range" id="off" min="-180" max="180" step="5" value="0" aria-label="北オフセット">
+  </div>
+</div>
+
+<!-- ===== PANEL 4: settings ===== -->
+<div id="sheet-settings" class="sheet" role="dialog" aria-modal="false">
+  <div class="handle"></div>
+  <h2>⚙️ 設定</h2>
+
+  <div class="setrow">
+    <div><div class="lab">診断表示</div><div class="sub">センサー生値・fps・ログを表示</div></div>
+    <div class="toggle" id="tog-diag" role="switch" aria-label="診断表示"></div>
+  </div>
+  <div class="setrow">
+    <div><div class="lab">情報バー</div><div class="sub">下部の日の出/南中/日の入バー</div></div>
+    <div class="toggle on" id="tog-infobar" role="switch" aria-label="情報バー"></div>
+  </div>
+
+  <button class="nbtn" id="btn-tutorial" style="margin-top:14px">📖 使い方をもう一度見る</button>
+  <button class="nbtn danger" id="btn-reset">🗑 北設定をリセット</button>
+
+  <div class="help" id="tutorial-card" style="display:none;margin-top:12px">
+    <b>使い方</b><br>
+    ① 下部の <b>☀️</b> で季節ごとの太陽軌道を比較<br>
+    ② <b>📅</b> で日付・時刻を変えて軌道上を太陽が移動<br>
+    ③ <b>🧭</b> で方位がずれていたら手動で北合わせ<br>
+    画面外の太陽は端の矢印が方向を案内します。
+  </div>
+
+  <div class="ver">sun-ar v7</div>
+</div>
+
+<!-- north guide overlay -->
+<div id="northguide">
+  <div class="gtext">
+    <b style="color:#ffd27a">北合わせ手順</b>
+    <ol>
+      <li><b>コンパス</b>アプリ等で実際の北を確認</li>
+      <li>iPhoneをその方向へ向ける（端末は<b>水平</b>に）</li>
+      <li>下のボタンで設定</li>
+    </ol>
+  </div>
+  <div class="arrow">▲</div>
+  <div class="ntag">N</div>
+  <div class="line"></div>
+  <div class="gbtns">
+    <button id="ng-cancel">キャンセル</button>
+    <button id="ng-set">この向きを北に設定</button>
+  </div>
+</div>
+
+<!-- bottom toolbar -->
+<div id="toolbar">
+  <button class="tb" id="tb-arcs" title="季節の軌道" aria-label="季節の軌道">☀️</button>
+  <button class="tb" id="tb-date" title="日付指定" aria-label="日付指定">📅</button>
+  <button class="tb" id="tb-north" title="北の較正" aria-label="北の較正">🧭</button>
+  <button class="tb" id="tb-settings" title="設定" aria-label="設定">⚙️</button>
+</div>
+
+<!-- ===== STEP 1 ===== -->
+<div id="s1" class="screen on">
+  <div class="step">STEP <b>1</b> / 2 · センサー<span class="dots"><span class="d on"></span><span class="d"></span></span></div>
+  <div class="icon">🧭</div>
+  <h1>傾き・方位センサーを<br>有効にします</h1>
+  <p class="why">現実の空と方位を一致させるために使います</p>
+  <p>ボタンを押すと、iPhoneの許可ダイアログが表示されます。</p>
+  <button class="btn" id="enable">センサーを有効化</button>
+  <div class="live" id="s1-live"></div>
+</div>
+
+<!-- ===== STEP 2 ===== -->
+<div id="s2" class="screen">
+  <div class="step">STEP <b>2</b> / 2 · カメラ<span class="dots"><span class="d on"></span><span class="d on"></span></span></div>
+  <div class="icon">📷</div>
+  <h1>カメラを開始します</h1>
+  <p class="why">空に重ねて表示するため背面カメラを使います</p>
+  <p>空にかざすと、太陽の軌道と東西南北が現実の風景に重なって表示されます。</p>
+  <button class="btn" id="startcam">カメラを開始</button>
+  <button class="btn ghost" id="start3d">カメラなしで確認</button>
+  <div class="live" id="s2-live"></div>
+</div>
+
+<!-- ===== DENIED ===== -->
+<div id="denied" class="screen">
+  <div class="step">センサー許可が必要です</div>
+  <div class="icon">⚠️</div>
+  <h1>センサーが拒否されています</h1>
+  <p>一度拒否すると再タップでは許可ダイアログが出ません。下の手順で再有効化してください。</p>
+  <div class="help">
+    <b>方法A（このページから）</b><br>アドレスバー左の <span class="n">あ A</span> → <b>Webサイトの設定</b> → <b>モーションと方向</b> → 許可<br><br>
+    <b>方法B（設定アプリ）</b><br>設定 → アプリ → <b>Safari</b> → モーションと方向のアクセスを確認<br><br>
+    設定後、このページを<b>再読み込み</b>してください。
+  </div>
+  <button class="btn ghost" id="retry">もう一度試す</button>
+</div>
+
+<div id="toast"></div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/suncalc/1.9.0/suncalc.min.js"></script>
+
+<script>
+"use strict";
+(function(){
+  var $ = function(id){return document.getElementById(id)};
+  var D2R = Math.PI/180, R2D = 180/Math.PI;
+
+  var dbgEl=$("dbg");
+  function log(msg,cls){ cls=cls||"i";
+    var d=document.createElement("div"); d.className=cls;
+    d.textContent="["+new Date().toLocaleTimeString()+"] "+msg;
+    dbgEl.appendChild(d); dbgEl.scrollTop=dbgEl.scrollHeight; console.log("[sun-ar]",msg);
+  }
+
+  var state = {
+    lat:35.6895, lon:139.6917, alt:null,
+    alpha:0, beta:0, gamma:0, compass:null, accuracy:null,
+    screenAngle:0, northOffset:0, hasOrientation:false,
+    customDate:new Date(), customMin:720,
+    showCustomArc:false, showCustomSun:true, facingMode:"environment",
+    calibrated:false, sunTimes:null, sunTimesDate:null,
+    playing:false, lastPlayT:0,
+    showDiag:false, showInfobar:true
+  };
+  var scene,camera,renderer,world,sunMesh,sunGlow,animId=null,_zee,_q1,currentStream=null;
+  var seasonArcs={}, customArc=null, customSunMesh=null, customSunLabel=null, customSunLabelTime=-1;
+  var SKY_R=100;
+
+  // ============ screens ============
+  function show(id){ ["s1","s2","denied"].forEach(function(s){ $(s).classList.toggle("on", s===id); }); }
+
+  // ============ STEP1: permission (synchronous-first) ============
+  $("enable").addEventListener("click", function(){
+    log("【STEP1】センサー許可を要求（同期）");
+    var btn=$("enable"); btn.disabled=true; btn.innerHTML='<span class="spin"></span>許可待ち...';
+    var DOE=window.DeviceOrientationEvent;
+    if(DOE && typeof DOE.requestPermission==="function"){
+      DOE.requestPermission().then(function(res){
+        log("許可結果: "+res, res==="granted"?"i":"w");
+        if(res==="granted") onSensorGranted(); else { show("denied"); }
+      }).catch(function(e){ log("許可エラー: "+e.message,"e"); show("denied"); });
+    } else { log("requestPermission不要"); onSensorGranted(); }
+  });
+
+  function onSensorGranted(){
+    window.addEventListener("deviceorientation", onOri, true);
+    window.addEventListener("orientationchange", function(){ setTimeout(readScreen,200); });
+    readScreen(); log("センサーリスナー登録 ✔");
+    var t0=Date.now();
+    var iv=setInterval(function(){
+      if(state.hasOrientation){ clearInterval(iv);
+        $("s1-live").textContent="センサー受信OK ✓  compass "+(state.compass==null?"n/a":state.compass.toFixed(0)+"°");
+        log("センサー受信 ✔ → STEP2"); setTimeout(function(){ show("s2"); liveS2(); },700);
+      } else if(Date.now()-t0>3000){ clearInterval(iv);
+        $("s1-live").className="live bad"; $("s1-live").textContent="センサー値が届きません（https/設定を確認）";
+        log("センサー未着","w"); setTimeout(function(){ show("s2"); liveS2(); },1300);
+      }
+    },150);
+  }
+  var s2iv;
+  function liveS2(){ s2iv=setInterval(function(){ var el=$("s2-live");
+    if(state.compass!=null) el.textContent="compass "+state.compass.toFixed(0)+"°  /  α "+(state.alpha*R2D).toFixed(0)+"°";
+    else if(state.hasOrientation) el.textContent="傾き検知中（コンパスは n/a）"; else el.textContent="";
+  },200); }
+
+  // ============ STEP2 ============
+  $("startcam").addEventListener("click", function(){ clearInterval(s2iv);
+    var b=$("startcam"); b.disabled=true; b.innerHTML='<span class="spin"></span>起動中...';
+    log("【STEP2】カメラ要求"); var camP=getCamera(); beginRun(true,camP); });
+  $("start3d").addEventListener("click", function(){ clearInterval(s2iv);
+    log("【STEP2】カメラなし開始"); beginRun(false,null); });
+  $("retry").addEventListener("click", function(){ location.reload(); });
+
+  function beginRun(useCam,camP){
+    show("");
+    $("toolbar").classList.add("on");
+    $("pill").classList.add("on");
+    $("reticle").style.display="block";
+    if(state.showInfobar) $("infobar").classList.add("on");
+
+    var chain=Promise.resolve();
+    if(useCam && camP){
+      chain=camP.then(function(stream){ currentStream=stream; var v=$("video");
+        v.srcObject=stream; v.setAttribute("playsinline",""); v.muted=true; v.style.display="block";
+        return v.play().catch(function(){});
+      }).then(function(){ log("カメラ起動 ✔"); $("flipcam").style.display="flex"; }).catch(function(e){ log("カメラ失敗: "+e.message+" → 3Dのみ","w"); });
+    }
+    chain.then(getLoc).then(function(){
+      computeSunTimes();
+      if(!window.THREE){ log("THREE未読み込み!","e"); return; }
+      buildScene(); bindControls(); initDateTimeUI();
+      window.addEventListener("resize", onResize, {passive:true});
+      log("レンダーループ開始"); animId=requestAnimationFrame(loop);
+      updatePill();
+    }).catch(function(e){ log("起動エラー: "+e.message,"e"); });
+  }
+
+  // ============ helpers ============
+  function getCamera(){
+    var fm=state.facingMode||"environment";
+    var c={video:{facingMode:{ideal:fm},width:{ideal:1280},height:{ideal:720}},audio:false};
+    if(navigator.mediaDevices&&navigator.mediaDevices.getUserMedia) return navigator.mediaDevices.getUserMedia(c);
+    var lg=navigator.webkitGetUserMedia||navigator.mozGetUserMedia;
+    if(lg) return new Promise(function(res,rej){lg.call(navigator,c,res,rej)});
+    return Promise.reject(new Error("カメラAPI未対応"));
+  }
+  function flipCamera(){
+    state.facingMode = state.facingMode==="environment" ? "user" : "environment";
+    log("カメラ切替→"+state.facingMode);
+    $("flipcam").innerHTML='<span class="spin" style="border-color:rgba(255,255,255,.3);border-top-color:#ffb347"></span>';
+    if(currentStream){ currentStream.getTracks().forEach(function(t){ t.stop(); }); }
+    getCamera().then(function(stream){ currentStream=stream; var v=$("video");
+      v.srcObject=stream; v.setAttribute("playsinline",""); v.muted=true; v.style.display="block";
+      return v.play().catch(function(){});
+    }).then(function(){
+      $("flipcam").innerHTML="🔄";
+      $("infobar").classList.toggle("front-cam", state.facingMode==="user");
+      toast(state.facingMode==="environment" ? "外カメラ（背面）" : "内カメラ（前面）");
+    }).catch(function(e){ log("カメラ切替失敗: "+e.message,"e"); $("flipcam").innerHTML="🔄"; toast("切替に失敗"); });
+  }
+  function getLoc(){ return new Promise(function(resolve){
+    if(!navigator.geolocation){ log("Geo未対応→東京","w"); resolve(); return; }
+    navigator.geolocation.getCurrentPosition(
+      function(p){ state.lat=p.coords.latitude; state.lon=p.coords.longitude;
+        state.alt=(typeof p.coords.altitude==="number")?p.coords.altitude:null;
+        log("位置取得: "+state.lat.toFixed(4)+", "+state.lon.toFixed(4)+(state.alt!=null?", "+state.alt.toFixed(0)+"m":", 高度なし")); resolve(); },
+      function(e){ log("位置失敗("+e.message+")→東京","w"); resolve(); },
+      {enableHighAccuracy:true,timeout:10000,maximumAge:60000});
+  }); }
+  function onOri(e){ state.hasOrientation=true;
+    state.alpha=(e.alpha||0)*D2R; state.beta=(e.beta||0)*D2R; state.gamma=(e.gamma||0)*D2R;
+    if(typeof e.webkitCompassHeading==="number"){ state.compass=e.webkitCompassHeading; state.accuracy=e.webkitCompassAccuracy; }
+  }
+  function readScreen(){ var a=0;
+    if(screen.orientation&&typeof screen.orientation.angle==="number") a=screen.orientation.angle;
+    else if(typeof window.orientation==="number") a=window.orientation;
+    state.screenAngle=a*D2R;
+  }
+  function updateCam(){ if(!state.hasOrientation) return;
+    var e=new THREE.Euler(state.beta,state.alpha,-state.gamma,"YXZ");
+    camera.quaternion.setFromEuler(e); camera.quaternion.multiply(_q1);
+    var q0=new THREE.Quaternion().setFromAxisAngle(_zee,-state.screenAngle); camera.quaternion.multiply(q0);
+  }
+
+  // ============ sun ============
+  function sunVec(date){
+    var p=SunCalc.getPosition(date, state.lat, state.lon);
+    var th=p.azimuth+Math.PI, ca=Math.cos(p.altitude), sa=Math.sin(p.altitude);
+    return { v:new THREE.Vector3(SKY_R*ca*Math.sin(th), SKY_R*sa, -SKY_R*ca*Math.cos(th)),
+      azDeg:((p.azimuth*R2D+180)%360), altDeg:p.altitude*R2D, up:p.altitude>0 };
+  }
+  function buildArc(date, colorHex){
+    var pts=[], y=date.getFullYear(), mo=date.getMonth(), da=date.getDate();
+    for(var m=0;m<=1440;m+=6){ var s=sunVec(new Date(y,mo,da,0,m,0)); if(s.altDeg<-2) continue; pts.push(s.v); }
+    if(pts.length<2) return null;
+    return new THREE.Line(new THREE.BufferGeometry().setFromPoints(pts),
+      new THREE.LineBasicMaterial({color:colorHex,transparent:true,opacity:0.7}));
+  }
+  function maxAltitudeOnDate(date){
+    var y=date.getFullYear(), mo=date.getMonth(), da=date.getDate(), mx=-90;
+    for(var m=0;m<=1440;m+=20){ var s=sunVec(new Date(y,mo,da,0,m,0)); if(s.altDeg>mx) mx=s.altDeg; }
+    return mx;
+  }
+  function computeSunTimes(){
+    var d=new Date(); var k=d.toDateString();
+    if(state.sunTimesDate===k && state.sunTimes) return;
+    state.sunTimes = SunCalc.getTimes(d, state.lat, state.lon);
+    state.sunTimesDate = k;
+    var fmt=function(dt){ if(!dt||isNaN(dt.getTime())) return "—"; return ("0"+dt.getHours()).slice(-2)+":"+("0"+dt.getMinutes()).slice(-2); };
+    $("ib-sr").textContent=fmt(state.sunTimes.sunrise);
+    $("ib-sn").textContent=fmt(state.sunTimes.solarNoon);
+    $("ib-ss").textContent=fmt(state.sunTimes.sunset);
+  }
+
+  function seasonDates(){ var y=new Date().getFullYear();
+    return { spring:new Date(y,2,20), summer:new Date(y,5,21), autumn:new Date(y,8,23), winter:new Date(y,11,22) }; }
+  function fmtDate(d){ return (d.getMonth()+1)+"/"+d.getDate(); }
+  function fmtFull(d){ return d.getFullYear()+"-"+("0"+(d.getMonth()+1)).slice(-2)+"-"+("0"+d.getDate()).slice(-2); }
+  function fmtTime(min){ var h=Math.floor(min/60), m=Math.floor(min%60); return ("0"+h).slice(-2)+":"+("0"+m).slice(-2); }
+
+  function makeLabel(t,c,size){ size=size||140;
+    var cv=document.createElement("canvas"); cv.width=256; cv.height=256;
+    var x=cv.getContext("2d"); x.font="bold "+size+"px -apple-system,sans-serif"; x.fillStyle=c;
+    x.textAlign="center"; x.textBaseline="middle"; x.fillText(t,128,136);
+    var sp=new THREE.Sprite(new THREE.SpriteMaterial({map:new THREE.CanvasTexture(cv),transparent:true,depthTest:false}));
+    sp.scale.set(14,14,1); return sp; }
+  function makeTimeLabel(text){
+    var cv=document.createElement("canvas"); cv.width=256; cv.height=128;
+    var x=cv.getContext("2d");
+    x.fillStyle="rgba(0,0,10,.7)"; x.beginPath();
+    if(x.roundRect) x.roundRect(28,40,200,48,16); else x.rect(28,40,200,48);
+    x.fill();
+    x.font="bold 36px ui-monospace,Menlo,monospace"; x.fillStyle="#c77dff";
+    x.textAlign="center"; x.textBaseline="middle"; x.fillText(text,128,64);
+    var sp=new THREE.Sprite(new THREE.SpriteMaterial({map:new THREE.CanvasTexture(cv),transparent:true,depthTest:false}));
+    sp.scale.set(10,5,1); return sp;
+  }
+
+  function buildScene(){
+    log("シーン構築中...");
+    scene=new THREE.Scene();
+    camera=new THREE.PerspectiveCamera(70,innerWidth/innerHeight,0.1,2000);
+    var cv=$("canvas");
+    renderer=new THREE.WebGLRenderer({canvas:cv,alpha:true,antialias:false,preserveDrawingBuffer:true});
+    renderer.setPixelRatio(Math.min(devicePixelRatio,2)); renderer.setSize(innerWidth,innerHeight,false);
+    renderer.setClearColor(0x000000,0); cv.style.display="block";
+    world=new THREE.Group(); scene.add(world);
+    _zee=new THREE.Vector3(0,0,1); _q1=new THREE.Quaternion(-Math.sqrt(0.5),0,0,Math.sqrt(0.5));
+
+    var ring=new THREE.Mesh(new THREE.RingGeometry(SKY_R-0.8,SKY_R+0.8,128),
+      new THREE.MeshBasicMaterial({color:0x2a3550,side:THREE.DoubleSide,transparent:true,opacity:0.5}));
+    ring.rotation.x=-Math.PI/2; world.add(ring);
+
+    [["N",0,"#ffb347"],["E",90,"#5fe0d6"],["S",180,"#9fb0d0"],["W",270,"#5fe0d6"]].forEach(function(d){
+      var th=d[1]*D2R, x=SKY_R*Math.sin(th), z=-SKY_R*Math.cos(th);
+      var lab=makeLabel(d[0],d[2]); lab.position.set(x,8,z); world.add(lab);
+      var g=new THREE.BufferGeometry(); g.setAttribute("position",new THREE.BufferAttribute(new Float32Array([x,0,z,x,16,z]),3));
+      world.add(new THREE.Line(g,new THREE.LineBasicMaterial({color:new THREE.Color(d[2]),transparent:true,opacity:0.6})));
+    });
+
+    var todayArc=buildArc(new Date(),0xffd27a); if(todayArc) world.add(todayArc);
+
+    var sd=seasonDates();
+    var cfg={summer:["summer",0xff8c6b],spring:["spring",0x6ee7a0],autumn:["autumn",0xffb347],winter:["winter",0x6bb6ff]};
+    Object.keys(cfg).forEach(function(key){
+      var a=buildArc(sd[key], cfg[key][1]); if(a){ a.visible=false; world.add(a); seasonArcs[key]=a; }
+    });
+
+    sunMesh=new THREE.Mesh(new THREE.SphereGeometry(3.5,24,24),new THREE.MeshBasicMaterial({color:0xffd27a}));
+    sunGlow=new THREE.Mesh(new THREE.SphereGeometry(7,24,24),new THREE.MeshBasicMaterial({color:0xffb347,transparent:true,opacity:0.22,depthWrite:false}));
+    world.add(sunMesh); world.add(sunGlow);
+
+    customSunMesh=new THREE.Mesh(new THREE.SphereGeometry(3.2,24,24),new THREE.MeshBasicMaterial({color:0xc77dff}));
+    customSunMesh.visible=false; world.add(customSunMesh);
+
+    log("シーン構築完了 ✔");
+  }
+
+  function rebuildCustomArc(){
+    if(customArc){ world.remove(customArc); customArc.geometry.dispose(); customArc.material.dispose(); customArc=null; }
+    if(state.showCustomArc){ customArc=buildArc(state.customDate,0xc77dff); if(customArc) world.add(customArc); }
+  }
+  function ensureCustomLabel(){
+    if(state.customMin === customSunLabelTime) return;
+    customSunLabelTime = state.customMin;
+    if(customSunLabel){ world.remove(customSunLabel); customSunLabel.material.map.dispose(); customSunLabel.material.dispose(); }
+    customSunLabel = makeTimeLabel(fmtTime(state.customMin));
+    world.add(customSunLabel);
+  }
+
+  function onResize(){ readScreen(); if(!camera||!renderer) return;
+    camera.aspect=innerWidth/innerHeight; camera.updateProjectionMatrix(); renderer.setSize(innerWidth,innerHeight,false); }
+
+  // ============ sun finder ============
+  var _projV = null;
+  function updateFinder(targetWorldPos, color){
+    if(!_projV) _projV = new THREE.Vector3();
+    _projV.copy(targetWorldPos).project(camera);
+    var inView = _projV.x>-1 && _projV.x<1 && _projV.y>-1 && _projV.y<1 && _projV.z<1;
+    var finder=$("finder");
+    if(inView){ finder.classList.remove("on"); return; }
+    // direction from screen center to sun in screen-space
+    var dx = _projV.x, dy = -_projV.y; // y inverted
+    if(_projV.z >= 1){ dx = -dx; dy = -dy; } // behind camera: flip
+    var len = Math.sqrt(dx*dx+dy*dy)||1;
+    dx/=len; dy/=len;
+    var W=innerWidth, H=innerHeight, margin=46;
+    // clamp to screen edge with margin
+    var hw=W/2-margin, hh=H/2-margin;
+    var t = Math.min(hw/Math.abs(dx||1e-6), hh/Math.abs(dy||1e-6));
+    var px = W/2 + dx*t - 23, py = H/2 + dy*t - 23;
+    var ang = Math.atan2(dy, dx) + Math.PI/2; // SVG arrow points up by default
+    finder.style.transform = "translate("+px+"px,"+py+"px) rotate("+ang+"rad)";
+    finder.style.color = color;
+    finder.classList.add("on");
+  }
+
+  // ============ loop ============
+  var fc=0,fpsT=0,fps=0,_tmpWP=null;
+  function loop(now){ animId=requestAnimationFrame(loop);
+    try{
+      fc++; if(!fpsT)fpsT=now; if(now-fpsT>=500){ fps=Math.round(fc*1000/(now-fpsT)); fc=0; fpsT=now; }
+
+      // playing time advance
+      if(state.playing){
+        if(state.lastPlayT===0) state.lastPlayT=now;
+        var dt=(now-state.lastPlayT)/1000; state.lastPlayT=now;
+        state.customMin = (state.customMin + dt*120) % 1440;
+        syncTimeUI(true);
+      }
+
+      world.rotation.y=state.northOffset; updateCam();
+      var s=sunVec(new Date());
+      sunMesh.position.copy(s.v); sunMesh.material.color.setHex(s.up?0xffd27a:0x46506a);
+      // breathing pulse on glow
+      var pulse = 0.20 + 0.04 * Math.sin(now * 0.0015);
+      sunGlow.material.opacity = pulse;
+      sunGlow.position.copy(s.v); sunGlow.visible=s.up;
+
+      // custom sun
+      var cs=null;
+      if(state.showCustomSun){
+        var cd=state.customDate, cm=state.customMin;
+        cs=sunVec(new Date(cd.getFullYear(),cd.getMonth(),cd.getDate(),Math.floor(cm/60),Math.floor(cm%60),0));
+        customSunMesh.position.copy(cs.v); customSunMesh.visible=true;
+        ensureCustomLabel();
+        if(customSunLabel){ customSunLabel.position.copy(cs.v); customSunLabel.position.y += 6; customSunLabel.visible=true; }
+      } else {
+        customSunMesh.visible=false;
+        if(customSunLabel) customSunLabel.visible=false;
+      }
+
+      renderer.render(scene,camera);
+      updateDiag(s);
+      updateInfobar(s);
+
+      // sun finder: prefer custom sun if it's the focus; otherwise current sun (if above horizon)
+      if(!_tmpWP) _tmpWP = new THREE.Vector3();
+      if(state.showCustomSun && cs){
+        customSunMesh.getWorldPosition(_tmpWP);
+        updateFinder(_tmpWP, "#c77dff");
+      } else if(s.up){
+        sunMesh.getWorldPosition(_tmpWP);
+        updateFinder(_tmpWP, "#ffd27a");
+      } else {
+        $("finder").classList.remove("on");
+      }
+    }catch(e){ log("ループエラー: "+e.message,"e"); cancelAnimationFrame(animId); }
+  }
+
+  function sv(id,t,c){ var el=$(id); if(el){ el.textContent=t; el.className="v"+(c?" "+c:""); } }
+  function updateDiag(s){
+    if(!state.showDiag) return;
+    sv("r-h", state.compass==null?"n/a":state.compass.toFixed(0)+"°", state.compass==null?"warn":"ok");
+    sv("r-abg",(state.alpha*R2D).toFixed(0)+"° "+(state.beta*R2D).toFixed(0)+"° "+(state.gamma*R2D).toFixed(0)+"°");
+    sv("r-sun", s.azDeg.toFixed(0)+"° / "+s.altDeg.toFixed(1)+"°", s.up?"ok":"warn");
+    sv("r-fps", String(fps), fps<20?"warn":"ok");
+  }
+
+  function updateInfobar(s){
+    if(!state.showInfobar) return;
+    var el=$("ib-now");
+    if(s.up){ el.classList.remove("down"); el.textContent="az "+s.azDeg.toFixed(0)+"° / alt "+s.altDeg.toFixed(0)+"°"; }
+    else { el.classList.add("down"); el.textContent="🌙 地平線下"; }
+  }
+
+  // ============ pill ============
+  var pillTimer;
+  function updatePill(){
+    var pill=$("pill"), lab=$("pill-label");
+    pill.classList.remove("warn","err");
+    if(!state.hasOrientation){ pill.classList.add("err"); lab.textContent="センサー未受信"; return; }
+    if(!state.calibrated){ pill.classList.add("warn"); lab.textContent="北が未較正"; return; }
+    lab.textContent="追跡中";
+  }
+  $("pill").addEventListener("click", function(){
+    // shortcut: if uncalibrated, open north sheet
+    if(!state.calibrated){ toggleSheet("north"); return; }
+    var d=$("pill-detail");
+    d.innerHTML = "loc " + state.lat.toFixed(3) + ", " + state.lon.toFixed(3) +
+      "<br>alt " + (state.alt==null?"—":state.alt.toFixed(0)+" m") +
+      "<br>compass " + (state.compass==null?"n/a":state.compass.toFixed(0)+"°") +
+      "<br>fps " + fps;
+    d.classList.add("on");
+    clearTimeout(pillTimer); pillTimer=setTimeout(function(){ d.classList.remove("on"); }, 3000);
+  });
+
+  // ============ sheets ============
+  var sheets={arcs:"sheet-arcs",date:"sheet-date",north:"sheet-north",settings:"sheet-settings"};
+  function toggleSheet(name){
+    var willOpen=!$(sheets[name]).classList.contains("on");
+    Object.keys(sheets).forEach(function(k){ $(sheets[k]).classList.remove("on"); $("tb-"+k).classList.remove("active"); });
+    if(willOpen){ $(sheets[name]).classList.add("on"); $("tb-"+name).classList.add("active"); }
+  }
+
+  // sheet swipe-down to close
+  function attachSwipe(sheet){
+    var startY=null, dy=0;
+    sheet.addEventListener("touchstart", function(e){
+      if(sheet.scrollTop>0) return; // only when scrolled to top
+      startY=e.touches[0].clientY; dy=0;
+    }, {passive:true});
+    sheet.addEventListener("touchmove", function(e){
+      if(startY==null) return;
+      dy=e.touches[0].clientY-startY;
+      if(dy>0){ sheet.style.transform="translateY("+dy+"px)"; }
+    }, {passive:true});
+    sheet.addEventListener("touchend", function(){
+      if(startY==null) return;
+      if(dy>60){
+        sheet.style.transform="";
+        sheet.classList.remove("on");
+        Object.keys(sheets).forEach(function(k){ if(sheets[k]===sheet.id) $("tb-"+k).classList.remove("active"); });
+      } else {
+        sheet.style.transform="";
+      }
+      startY=null; dy=0;
+    });
+  }
+
+  function bindControls(){
+    $("tb-arcs").addEventListener("click", function(){ toggleSheet("arcs"); });
+    $("tb-date").addEventListener("click", function(){ toggleSheet("date"); });
+    $("tb-north").addEventListener("click", function(){ toggleSheet("north"); });
+    $("tb-settings").addEventListener("click", function(){ toggleSheet("settings"); });
+    $("flipcam").addEventListener("click", flipCamera);
+
+    Object.keys(sheets).forEach(function(k){ attachSwipe($(sheets[k])); });
+
+    // seasonal
+    var sd=seasonDates();
+    $("d-today").textContent=fmtDate(new Date())+" · 南中"+maxAltitudeOnDate(new Date()).toFixed(0)+"°";
+    $("d-summer").textContent=fmtDate(sd.summer)+" · 南中"+maxAltitudeOnDate(sd.summer).toFixed(0)+"°";
+    $("d-spring").textContent=fmtDate(sd.spring)+" · 南中"+maxAltitudeOnDate(sd.spring).toFixed(0)+"°";
+    $("d-autumn").textContent=fmtDate(sd.autumn)+" · 南中"+maxAltitudeOnDate(sd.autumn).toFixed(0)+"°";
+    $("d-winter").textContent=fmtDate(sd.winter)+" · 南中"+maxAltitudeOnDate(sd.winter).toFixed(0)+"°";
+    [["ck-summer","summer"],["ck-spring","spring"],["ck-autumn","autumn"],["ck-winter","winter"]].forEach(function(p){
+      $(p[0]).addEventListener("change", function(e){ if(seasonArcs[p[1]]) seasonArcs[p[1]].visible=e.target.checked; });
+    });
+
+    document.querySelectorAll(".chip[data-preset]").forEach(function(b){
+      b.addEventListener("click", function(){
+        stopPlay();
+        var k=b.getAttribute("data-preset");
+        state.customDate = k==="today" ? new Date() : seasonDates()[k];
+        markPreset(); syncDateUI(); rebuildCustomArc();
+      });
+    });
+    document.querySelectorAll(".sbtn[data-day]").forEach(function(b){
+      b.addEventListener("click", function(){
+        var d=new Date(state.customDate); d.setDate(d.getDate()+parseInt(b.getAttribute("data-day"),10));
+        state.customDate=d; markPreset(); syncDateUI(); rebuildCustomArc();
+      });
+    });
+    document.querySelectorAll(".sbtn[data-min]").forEach(function(b){
+      b.addEventListener("click", function(){
+        stopPlay();
+        state.customMin=Math.max(0,Math.min(1439,state.customMin+parseInt(b.getAttribute("data-min"),10)));
+        syncTimeUI();
+      });
+    });
+    $("time-range").addEventListener("input", function(e){ stopPlay(); state.customMin=parseInt(e.target.value,10); syncTimeUI(); });
+    $("playbtn").addEventListener("click", function(){
+      if(state.playing){ stopPlay(); } else {
+        state.playing=true; state.lastPlayT=0;
+        $("playbtn").textContent="❚❚"; $("playbtn").classList.add("playing");
+      }
+    });
+    $("ck-custom-arc").addEventListener("change", function(e){ state.showCustomArc=e.target.checked; rebuildCustomArc(); });
+    $("ck-custom-sun").addEventListener("change", function(e){ state.showCustomSun=e.target.checked; });
+
+    // north controls
+    $("off").addEventListener("input", function(e){ setOffset(parseInt(e.target.value,10), true); });
+    $("btn-manual").addEventListener("click", function(){
+      $("sheet-north").classList.remove("on"); $("tb-north").classList.remove("active");
+      $("northguide").classList.add("on");
+    });
+    $("btn-compass-guide").addEventListener("click", function(){
+      var g=$("compass-guide"); g.style.display=g.style.display==="none"?"block":"none";
+    });
+    $("ng-cancel").addEventListener("click", function(){ $("northguide").classList.remove("on"); });
+    $("ng-set").addEventListener("click", function(){
+      // ★ sensor-independent: current heading becomes north
+      var fwd = new THREE.Vector3(0,0,-1).applyQuaternion(camera.quaternion);
+      var headingNow = Math.atan2(fwd.x, -fwd.z);
+      var deg = Math.round(-headingNow * R2D);
+      deg = ((deg + 540) % 360) - 180;
+      setOffset(deg, false);
+      state.calibrated=true; updatePill();
+      $("northguide").classList.remove("on");
+      // success flash
+      var f=$("flash"); f.classList.remove("on"); void f.offsetWidth; f.classList.add("on");
+      toast("北を設定しました ✓");
+      log("手動北設定(センサー非依存) offset="+deg+"°");
+    });
+
+    // tilt monitor removed in v7.1 — north can be set in any posture
+
+    // settings
+    $("tog-diag").addEventListener("click", function(){
+      state.showDiag=!state.showDiag;
+      $("tog-diag").classList.toggle("on", state.showDiag);
+      $("diag").classList.toggle("on", state.showDiag);
+      $("dbg").classList.toggle("on", state.showDiag);
+    });
+    $("tog-infobar").addEventListener("click", function(){
+      state.showInfobar=!state.showInfobar;
+      $("tog-infobar").classList.toggle("on", state.showInfobar);
+      $("infobar").classList.toggle("on", state.showInfobar);
+    });
+    $("btn-tutorial").addEventListener("click", function(){
+      var t=$("tutorial-card"); t.style.display=t.style.display==="none"?"block":"none";
+    });
+    $("btn-reset").addEventListener("click", function(){
+      try{ localStorage.removeItem("sunar_north"); }catch(e){}
+      setOffset(0, false); state.calibrated=false; updatePill();
+      toast("北設定をリセットしました");
+    });
+
+    // infobar minimize
+    $("ib-min-btn").addEventListener("click", function(e){
+      e.stopPropagation();
+      var ib=$("infobar"); var mn=ib.classList.toggle("min");
+      $("ib-min-btn").textContent = mn ? "◂" : "▸";
+      try{ localStorage.setItem("sunar_ibmin", mn?"1":"0"); }catch(e2){}
+    });
+    try{ if(localStorage.getItem("sunar_ibmin")==="1"){ $("infobar").classList.add("min"); $("ib-min-btn").textContent="◂"; } }catch(e){}
+  }
+
+  function stopPlay(){
+    if(!state.playing) return;
+    state.playing=false; state.lastPlayT=0;
+    $("playbtn").textContent="▶"; $("playbtn").classList.remove("playing");
+  }
+
+  function setOffset(deg, fromSlider){
+    deg=Math.max(-180,Math.min(180,deg)); state.northOffset=deg*D2R;
+    if(!fromSlider) $("off").value=String(deg);
+    $("off-val").textContent=deg+"°";
+    try{ localStorage.setItem("sunar_north", String(deg)); }catch(e){}
+  }
+  function markPreset(){
+    var sd=seasonDates(), key=null, c=state.customDate;
+    ["spring","summer","autumn","winter"].forEach(function(k){
+      if(sd[k].getMonth()===c.getMonth()&&sd[k].getDate()===c.getDate()) key=k;
+    });
+    var today=new Date(); if(c.getMonth()===today.getMonth()&&c.getDate()===today.getDate()) key="today";
+    document.querySelectorAll(".chip[data-preset]").forEach(function(b){ b.classList.toggle("sel", b.getAttribute("data-preset")===key); });
+  }
+  function syncDateUI(){ $("date-val").textContent=fmtFull(state.customDate); }
+  function syncTimeUI(skipRange){ $("time-val").textContent=fmtTime(state.customMin); if(!skipRange) $("time-range").value=String(Math.floor(state.customMin)); else $("time-range").value=String(Math.floor(state.customMin)); }
+  function initDateTimeUI(){
+    state.customDate=new Date(); state.customMin=720; markPreset(); syncDateUI(); syncTimeUI();
+    try{ var s=localStorage.getItem("sunar_north"); if(s!==null){ setOffset(parseInt(s,10),false); state.calibrated=true; log("保存済みの北設定を復元: "+s+"°"); } }catch(e){}
+  }
+
+  var toastTm;
+  function toast(m){ var t=$("toast"); t.textContent=m; t.style.display="block";
+    clearTimeout(toastTm); toastTm=setTimeout(function(){t.style.display="none"},2500); }
+
+  window.addEventListener("error", function(e){ log("JS Error: "+e.message+" @"+e.lineno,"e"); });
+  window.addEventListener("unhandledrejection", function(e){ log("Promise reject: "+(e.reason&&e.reason.message||e.reason),"e"); });
+  log("ページ読み込み完了 — STEP1待機");
+})();
+</script>
+</body>
+</html>
